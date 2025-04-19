@@ -25,7 +25,7 @@ public class ClientProxy implements InvocationHandler {
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         //构建request请求
         RpcRequest request = RpcRequest.builder()
-                .interfaceName(method.getClass().getName())
+                .interfaceName(method.getDeclaringClass().getName())
                 .method(method.getName())
                 .paramsTypes(method.getParameterTypes())
                 .params(args)
