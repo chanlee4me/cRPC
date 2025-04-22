@@ -1,5 +1,8 @@
 package com.chanlee.crpc.v1.common.convention;
 
+/**
+ * 错误码接口
+ */
 public interface ErrorCode {
     /**
      * 错误码

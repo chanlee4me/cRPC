@@ -1,7 +1,7 @@
 package com.chanlee.crpc.v1.client;
 
-import com.chanlee.crpc.v1.common.RpcRequest;
-import com.chanlee.crpc.v1.common.RpcResponse;
+import com.chanlee.crpc.v1.common.RpcRequestDTO;
+import com.chanlee.crpc.v1.common.RpcResponseDTO;
 import lombok.AllArgsConstructor;
 
 import java.lang.reflect.InvocationHandler;
@@ -10,6 +10,9 @@ import java.lang.reflect.Proxy;
 
 import static com.chanlee.crpc.v1.client.IOClient.sendRequest;
 
+/**
+ * 客户端代理类
+ */
 @AllArgsConstructor
 public class ClientProxy implements InvocationHandler {
     /**
@@ -24,14 +27,14 @@ public class ClientProxy implements InvocationHandler {
 
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         //构建request请求
-        RpcRequest request = RpcRequest.builder()
+        RpcRequestDTO request = RpcRequestDTO.builder()
                 .interfaceName(method.getDeclaringClass().getName())
                 .method(method.getName())
                 .paramsTypes(method.getParameterTypes())
                 .params(args)
                 .build();
         //发送请求并获取响应
-        RpcResponse<Object> response = sendRequest(host, port, request);
+        RpcResponseDTO<Object> response = sendRequest(host, port, request);
         //返回结果数据
         return response.getData();
     }

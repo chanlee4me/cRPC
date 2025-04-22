@@ -9,12 +9,12 @@ import java.io.ObjectOutputStream;
 import java.net.Socket;
 
 /**
- * 客户端代码
+ * 客户端主代码
  */
 public class Client{
 
     public static void main(String[] args){
-        ClientProxy clientProxy = new ClientProxy("127.0.0.1", 8003);
+        ClientProxy clientProxy = new ClientProxy("127.0.0.1", 8005);
         UserService proxy = clientProxy.getProxy(UserService.class);
 
         //调用方法 1
