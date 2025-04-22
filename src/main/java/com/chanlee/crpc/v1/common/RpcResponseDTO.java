@@ -6,9 +6,12 @@ import lombok.experimental.Accessors;
 
 import java.io.Serializable;
 
+/**
+ * 响应对象体
+ */
 @Data
 @Accessors(chain = true)
-public class RpcResponse<T> implements Serializable {
+public class RpcResponseDTO<T> implements Serializable {
     /**
      * 正确返回码
      */
@@ -29,19 +32,19 @@ public class RpcResponse<T> implements Serializable {
      */
     private T data;
 
-    public static RpcResponse<Void> success(){
-        return new RpcResponse<Void>()
+    public static RpcResponseDTO<Void> success(){
+        return new RpcResponseDTO<Void>()
                 .setCode(SUCCESS_CODE);
     }
 
-    public static <T> RpcResponse<T> success(T data){
-        return new RpcResponse<T>()
+    public static <T> RpcResponseDTO<T> success(T data){
+        return new RpcResponseDTO<T>()
                 .setCode(SUCCESS_CODE)
                 .setData(data);
     }
 
-    public static RpcResponse<Void> failure(){
-        return new RpcResponse<Void>()
+    public static RpcResponseDTO<Void> failure(){
+        return new RpcResponseDTO<Void>()
                 .setMessage(BaseErrorCode.SERVER_ERROR.code())
                 .setCode(BaseErrorCode.SERVER_ERROR.message());
     }

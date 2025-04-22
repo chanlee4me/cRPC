@@ -10,7 +10,7 @@ import java.io.Serializable;
  */
 @Builder
 @Data
-public class RpcRequest implements Serializable {
+public class RpcRequestDTO implements Serializable {
     /**
      * 接口名
      */
