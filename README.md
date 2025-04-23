@@ -1,4 +1,4 @@
-# fcRPC
+# cRPC
 记录我从零学习手写 RPC 的过程
 # 参考文档
 https://github.com/he2121/MyRPCFromZero
@@ -269,7 +269,7 @@ public interface UserService {
 
 针对问题 3、4，将这些问题抽象了出来，建立一个 IOClient 类，专门建立连接、发送请求、接收响应。
 
-## 三、设计思路
+## 三、本版本目标
 
 1. 将请求、响应的数据各自封装到一个公共类中，这样在请求和响应时就能进行统一，便于后续代码的书写和维护
 2. 服务端采用循环+BIO的形式，当接收到请求对象时，利用反射调用对应方法，并将执行结果发送给客户端
@@ -466,6 +466,8 @@ public class ClientProxy implements InvocationHandler {
 
 #### client/IOClient
 
+
+
 ```java
 package com.chanlee.crpc.v1.client;
 
@@ -516,6 +518,8 @@ public class IOClient implements Serializable {
 ### 服务层
 
 #### service/UserService
+
+
 
 ```java
 package com.chanlee.crpc.v1.service;
@@ -639,6 +643,8 @@ public class RpcRequestDTO implements Serializable {
 
 #### Common/RpcRespDTO
 
+
+
 ```java
 package com.chanlee.crpc.v1.common;
 
@@ -695,6 +701,8 @@ public class RpcResponseDTO<T> implements Serializable {
 
 #### common/User
 
+
+
 ```java
 package com.chanlee.crpc.v1.common;
 
@@ -729,15 +737,402 @@ public class User implements Serializable {
 }
 ```
 
-## 五、本版本完成的任务
-
-- [x]  将请求和响应进行封装
-- [x]  服务端提供多个服务
-- [x]  对客户端的一些任务进行了封装（建立连接&发出请求&接收响应）
-- [x] 利用动态代理加强了 IO 过程（封装了客户端发送的请求数据）
 
 
+# Version-2
 
-# 目前仍然存在的问题
+## 一、前置知识
 
-在处理异常时很粗糙——后续要为每种异常场景来抛出不同的错误码
+线程池
+
+## 二、上个版本存在的问题&解决思路
+
+**问题 1：**服务端将UserServiceImpl硬编码在代码中，不支持其他服务
+
+利用服务注册机制来解决该问题
+
+**问题 2**：服务端每当接收到一个新的连接请求时，就会创建一个子线程去执行任务，这样不够经济
+
+利用线程池来复用线程，降低开销
+
+**问题 3**：代码耦合度太高
+
+将逻辑抽取出来，解耦和
+
+## 三、本版本目标
+
+1. 实现服务注册机制，使得服务端可以根据客户端传过来的请求执行不同接口实现类中的服务
+2. 降低代码耦合度
+3. 使用线程池，实现线程复用
+
+
+
+## 四、代码实现
+
+### 实现服务注册
+
+> 版本一（说明：在服务端代码重构后，还会对这部分代码进行修改）
+
+要实现服务端能够监听不同的服务请求，那么可以用一个 Map，来实现服务请求接口到目标服务接口实现类的映射
+
+```java
+  //注册服务到serviceMap中
+  UserServiceImpl userService = new UserServiceImpl();
+  BlodServiceImpl blodService = new BlodServiceImpl();
+  Map<String, Object> serviceMap = new HashMap<>(){{
+     put("com.chanlee.crpc.v2.service.UserService", userService);
+     put("com.chanlee.crpc.v2.service.BlogService", blodService);
+  }};
+```
+
+> 版本二
+
+这部分代码请查看下方服务端代码重构的“将服务注册功能进行了抽象封装”内容
+
+### 服务端代码重构
+
+> 目前代码存在的问题：
+>
+> 1. 服务注册和处理逻辑都在主方法中，职责不清晰
+> 2. 硬编码了特定服务实例（UserServiceImpl）在请求处理中，添加新服务或修改现有服务需要修改代码，无法动态处理不同的服务
+> 3. 所有逻辑都在一个类中，不符合单一职责原则
+> 4. 服务端监听的端口是硬编码，在修改时需要改动源代码，不够优雅
+> 5. 没有考虑到服务的方法可能不止一个实现
+>
+> 以下我将逐步解决上述问题
+
+#### **将服务注册功能进行了抽象封装**
+
+> 这里我将服务注册功能分为两步实现：创建了服务注册接口、及其对应实现类
+>
+> 上面问题的第二点也在这里得到了解决
+
+registry/ServiceRegistry
+
+```java
+package com.chanlee.crpc.v2.registry;
+
+/**
+ * 服务注册接口
+ */
+public interface ServiceRegistry {
+
+    /**
+     * 注册服务
+     * @param serviceName 服务名称
+     * @param serviceImpl 服务实现
+     */
+    void register(String serviceName, Object serviceImpl);
+
+    /**
+     * 获取服务
+     * @param serviceName 服务名称
+     * @return 服务实现
+     */
+    Object getServiceAddress(String serviceName);
+}
+```
+
+registry/ServiceRegistryImpl
+
+```java
+package com.chanlee.crpc.v2.registry;
+
+import lombok.Data;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * 服务注册实现类
+ */
+@Data
+public class ServiceRegistryImpl implements ServiceRegistry{
+    private final Map<String, Object> serviceMap = new HashMap<>();
+
+    public void register(String serviceName, Object serviceImpl) {
+        serviceMap.put(serviceName, serviceImpl);
+    }
+
+    public Object getService(String serviceName) {
+        return serviceMap.get(serviceName);
+    }
+}
+```
+
+
+
+#### 将处理请求的核心逻辑进行了抽象封装
+
+> 处理请求的逻辑我也分了两步实现：请求处理器接口、请求处理器实现
+
+handler/RequestHandler
+
+```java
+package com.chanlee.crpc.v2.handler;
+
+import com.chanlee.crpc.v2.dto.RpcRequestDTO;
+import com.chanlee.crpc.v2.dto.RpcResponseDTO;
+
+/**
+ * 请求处理器接口
+ */
+public interface RequestHandler {
+    /**
+     * 处理RPC请求
+     * @param request RPC请求对象
+     * @return RPC响应对象
+     */
+    public RpcResponseDTO handle(RpcRequestDTO request);
+}
+```
+
+handler/RequestHandlerImpl
+
+```java
+package com.chanlee.crpc.v2.handler;
+
+import com.chanlee.crpc.v2.dto.RpcRequestDTO;
+import com.chanlee.crpc.v2.dto.RpcResponseDTO;
+import com.chanlee.crpc.v2.registry.ServiceRegistry;
+import lombok.AllArgsConstructor;
+
+import java.lang.reflect.Method;
+
+/**
+ * 请求处理器实现
+ */
+@AllArgsConstructor
+public class RequestHandlerImpl implements RequestHandler{
+
+    private final ServiceRegistry serviceRegistry;
+
+    public  RpcResponseDTO handle(RpcRequestDTO request) {
+
+        try {
+            //获取服务名称
+            String serviceName = request.getInterfaceName();
+            //从注册中心获取服务实例
+            Object service = serviceRegistry.getService(serviceName);
+            //获取方法并调用
+            if(service == null){
+                return RpcResponseDTO.failure("对应服务不存在：" +  serviceName);
+            }
+            Method method = service.getClass().getMethod(request.getMethod(), request.getParamsTypes());
+            Object invoke = method.invoke(service, request.getParams());
+            //返回成功执行结果
+            return RpcResponseDTO.success(invoke);
+        } catch (Exception e) {
+            return RpcResponseDTO.failure("服务执行错误：" +  e.getMessage());
+        }
+    }
+}
+```
+
+#### 将服务端端口配置提取出来
+
+```java
+package com.chanlee.crpc.v2.common.config;
+
+import lombok.Data;
+
+/**
+ * 服务端配置
+ */
+@Data
+public class ServerConfig {
+    private int port = 8005;
+}
+```
+
+
+
+#### 将配置服务器以及服务器运行逻辑解耦和
+
+**/Server**
+
+我这里创建了一个服务端启动类，专门用来进行服务器配置，然后调用RpcServer 的构造方法，来创建一个Rpc 服务器，最后再启动。
+
+我这样做的核心思想是：让每一个类只负责一个独有的功能（比如服务器运行和服务器配置是属于两个不同的功能，所以不把它们的逻辑写在一起）
+
+```java
+package com.chanlee.crpc.v2;
+
+import com.chanlee.crpc.v2.common.config.ServerConfig;
+import com.chanlee.crpc.v2.handler.RequestHandler;
+import com.chanlee.crpc.v2.handler.RequestHandlerImpl;
+import com.chanlee.crpc.v2.registry.ServiceRegistry;
+import com.chanlee.crpc.v2.registry.ServiceRegistryImpl;
+
+/**
+ * 服务端启动类
+ */
+public class Server {
+    public static void main(String[] args) {
+        //创建服务注册中心
+        ServiceRegistry serviceRegistry = new ServiceRegistryImpl();
+        //注册服务
+        serviceRegistry.register("com.chanlee.crpc.v2.service.BlogService", new com.chanlee.crpc.v2.serviceImpl.BlogServiceImpl());
+        serviceRegistry.register("com.chanlee.crpc.v2.service.UserService", new com.chanlee.crpc.v2.serviceImpl.UserServiceImpl());
+        //创建请求处理器
+        RequestHandler requestHandler = new RequestHandlerImpl(serviceRegistry);
+
+        //创建服务器配置
+        ServerConfig serverConfig = new ServerConfig(8005);
+
+        //创建并启动服务器
+        RpcServer server = new RpcServer(serviceRegistry, requestHandler, serverConfig);
+        server.start();
+    }
+}
+```
+
+
+
+**/RpcServer**
+
+由于服务器运行过程中涉及到：根据客户端传过来的方法找到对应服务、处理客户端请求、根据配置监听对应端口、使用线程池，所以这个类的成员变量中包含了这几部分内容。
+
+```java
+package com.chanlee.crpc.v2;
+
+import com.chanlee.crpc.v2.common.config.ServerConfig;
+import com.chanlee.crpc.v2.dto.RpcRequestDTO;
+import com.chanlee.crpc.v2.dto.RpcResponseDTO;
+import com.chanlee.crpc.v2.handler.RequestHandler;
+import com.chanlee.crpc.v2.registry.ServiceRegistry;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.rmi.registry.Registry;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * RPC服务器
+ */
+@Data
+public class RpcServer {
+    private final ServiceRegistry serviceRegistry;
+    private final RequestHandler requestHandler;
+    private final ServerConfig serverConfig;
+    private final ThreadPoolExecutor threadPool;
+
+    public RpcServer(ServiceRegistry serviceRegistry, RequestHandler requestHandler, ServerConfig serverConfig) {
+        this.serviceRegistry = serviceRegistry;
+        this.requestHandler = requestHandler;
+        this.serverConfig = serverConfig;
+        this.threadPool = new ThreadPoolExecutor(Runtime.getRuntime().availableProcessors(),
+                Runtime.getRuntime().availableProcessors() * 2,
+                60,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(100));
+    }
+
+    /**
+     * 启动RPC服务器
+     */
+    public void start(){
+        ...请看下方的代码
+    }
+    /**
+     * 处理客户端请求
+     */
+    private void handleRequest(Socket socket){
+      ...这里请看下方的代码
+    }
+}
+
+```
+
+#### 将服务器主线程的代码逻辑封装在了一个方法中
+
+这里的思想是，主线程不需要执行任何任务，它只是接受连接建立连接，然后将任务分发给子线程去执行
+
+**/RpcServer**
+
+```java
+    /**
+     * 启动RPC服务器
+     */
+    public void start(){
+        System.out.println("服务器已启动...");
+        try (ServerSocket serverSocket = new ServerSocket(serverConfig.getPort())){
+            while(true){
+                Socket socket = serverSocket.accept();
+                threadPool.execute(() -> handleRequest(socket));
+            }
+        } catch (IOException e) {
+            System.out.println("服务器启动失败：" + e.getMessage());
+        }
+    }
+```
+
+
+
+#### 将处理客户端请求的代码封装在一个方法中
+
+细心的你可能注意到，我上方已经有了一个RequestHandler接口，它的内部有一个handle 方法，那么为什么这里还要写一个handleRequest 方法呢？
+
+这是因为，对于RequestHandler内部的handle 方法，它在项目中的定位是执行处理请求的核心逻辑，它只需要对封装好的请求进行处理，然后返回执行结果即可。但是执行前后还有一些脏活累活，比如接收客户端请求，以及将执行结果发送给客户端，这些都需要有人完成，所以这里的handleRequest 方法就是来做这些脏活的。（这里和 AOP 的思想很像，核心方法只需要完成最核心的功能，其他一些预备工作、善后工作交由给其他人来完成）
+
+**/RpcServer**
+
+```java
+  /**
+   * 处理客户端请求
+   */
+  private void handleRequest(Socket socket){
+      try(
+          // 获取输入、输出流
+          ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+          ObjectInputStream in = new ObjectInputStream(socket.getInputStream())
+      ) {
+          //打印线程信息
+          System.out.println("线程：" + Thread.currentThread().getId() + " 接收到请求...");
+          //读取接收到的请求
+          RpcRequestDTO request = (RpcRequestDTO) in.readObject();
+
+          //处理请求
+          RpcResponseDTO response = requestHandler.handle(request);
+
+          System.out.println("线程：" + Thread.currentThread().getId() + "待发送响应：" + response);
+          //发送响应
+          out.writeObject(response);
+          out.flush();
+          System.out.println("线程：" + Thread.currentThread().getId() + " 响应已发送...");
+      } catch (Exception e) {
+          System.err.println("处理请求失败: " + e.getMessage());
+      }
+  }
+```
+
+## 五、遇到的问题
+
+1. 我在 debug 时发现，当客户端仅调用某一个服务时，服务端会有多个线程进行工作
+
+   我发现，执行完下面这一步时，客户端就已经与服务端建立了连接
+
+   ![image-20250422220822420](/Users/cli/Library/Application Support/typora-user-images/image-20250422220822420.png)
+
+   根据大模型的解释，并不是`UserService proxy = clientProxy.getProxy(UserService.class);`引起的客户端和服务端提前建立连接，而是由于当在调试模式下创建对象时，IDE通常会自动调用对象的`toString()`方法以显示对象信息，而这个方法会被动态代理拦截，从而会向服务端建立连接
+
+   如果直接运行（不以调试模式启动），则不会出现这个问题
+
+   
+
+2. 在网络中传输那些新创建的类时，记得要把类序列化（需要在类的声明上使用`implements Serializable`）
+
+## 六、目前版本仍然存在的问题
+
+1. 在处理异常时很粗糙——后续要为每种异常场景来抛出不同的错误码
+2. 服务端采用的是 BIO，这样性能较低
+3. 假设需要服务端不同端口对应不同的服务提供，当前版本不能满足。
+
