@@ -6,7 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * 默认的服务注册实现
+ * 服务注册实现类
  */
 @Data
 public class ServiceRegistryImpl implements ServiceRegistry{

@@ -13,9 +13,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.rmi.registry.Registry;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
@@ -27,13 +25,13 @@ public class RpcServer {
     private final ServiceRegistry serviceRegistry;
     private final RequestHandler requestHandler;
     private final ServerConfig serverConfig;
-    private final ThreadPoolExecutor threaPool;
+    private final ThreadPoolExecutor threadPool;
 
     public RpcServer(ServiceRegistry serviceRegistry, RequestHandler requestHandler, ServerConfig serverConfig) {
         this.serviceRegistry = serviceRegistry;
         this.requestHandler = requestHandler;
         this.serverConfig = serverConfig;
-        this.threaPool = new ThreadPoolExecutor(Runtime.getRuntime().availableProcessors(),
+        this.threadPool = new ThreadPoolExecutor(Runtime.getRuntime().availableProcessors(),
                 Runtime.getRuntime().availableProcessors() * 2,
                 60,
                 TimeUnit.SECONDS,
@@ -48,7 +46,7 @@ public class RpcServer {
         try (ServerSocket serverSocket = new ServerSocket(serverConfig.getPort())){
             while(true){
                 Socket socket = serverSocket.accept();
-                threaPool.execute(() -> handleRequest(socket));
+                threadPool.execute(() -> handleRequest(socket));
             }
         } catch (IOException e) {
             System.out.println("服务器启动失败：" + e.getMessage());
